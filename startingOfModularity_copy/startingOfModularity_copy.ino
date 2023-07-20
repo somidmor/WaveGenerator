@@ -1,11 +1,30 @@
 #include <DueTimer.h>
-#include <stdlib.h>     /* srand, rand */
-#include <time.h> 
+#include <stdlib.h>
+
+enum States {
+    INIT,
+    GET_USER_INPUT,
+    PARSE_USER_INPUT,
+    GENERATE_WAVES,
+    USER_INPUT_ERROR_STATE,
+};
+
+struct stateStatus {
+    States next;
+    States current;
+    States previous;
+};
+
+stateStatus gState = {
+    .next = States::INIT,
+    .current = States::INIT,
+    .previous = States::INIT
+};
 
 // User input variables
 int frequency, height1, portion1, height2, portion2, height3, portion3, height4, portion4;
 int numWaves, delayBetweenBatches, numBatches;
-int accuracy = 100; // Accuracy of the duty cycle in percentage
+int accuracy = 10; // Accuracy of the duty cycle in percentage
 bool shouldGoNext = false; // Flag to indicate if the next batch should be started
 String input; // String to store the received input
 int waveType = 1; // Variable to store the type of wave to generate
@@ -13,29 +32,48 @@ int waveType = 1; // Variable to store the type of wave to generate
 void setup() { 
   Serial.begin(9600); // Begin serial communication at 9600 baud
   analogWriteResolution(12); // Set resolution of the voltage from 0 to 4095
-  printMenu(); // Print the menu options
+  gState.current = States::INIT; // Initialize the first state
 }
 
 void loop() {
-  if (Serial.available()) { // If data is available to read
-    input = Serial.readStringUntil('\n'); // Read it until newline
+  switch(gState.current) {
+    case INIT:
+      printMenu();
+      gState.next = States::GET_USER_INPUT;
+      break;
 
-    if (input == "r" || input == "R") {
-      analogWrite(DAC0, 0);
-      NVIC_SystemReset(); // Reset the CPU
-    }
-    else if (input == "1" || input == "2") {
-      waveType = input.toInt(); // Set the wave type
-      Serial.println("Enter parameters: ");
-    }
-    else {
-      // Parse the input string
+    case GET_USER_INPUT:
+      if (Serial.available()) {
+        input = Serial.readStringUntil('\n');
+        if (input == "r" || input == "R") {
+          analogWrite(DAC0, 0);
+          NVIC_SystemReset();
+        } else if (input == "1" || input == "2") {
+          waveType = input.toInt();
+          Serial.println("Enter parameters: ");
+        } else {
+          gState.next = States::PARSE_USER_INPUT;
+        }
+      }
+      break;
+
+    case PARSE_USER_INPUT:
       parseInput(input);
+      gState.next = States::GENERATE_WAVES;
+      break;
 
-      // Generate the waves
+    case GENERATE_WAVES:
       generateWaves();
-    }
+      gState.next = States::GET_USER_INPUT;
+      break;
+
+    case USER_INPUT_ERROR_STATE:
+      // for later
+      break;
   }
+
+  gState.previous = gState.current;
+  gState.current = gState.next;
 }
 
 
@@ -48,7 +86,7 @@ void generateWaves() {
       shoutlResetCPU();
     } 
 
-    Serial.println(i);
+    // Serial.println(i);
     delay(delayBetweenBatches);
     shouldGoNext = false;
   }
@@ -73,31 +111,8 @@ void timeISR() {
       } else {
         currentHeight = 0;
       }
-    } else if (waveType == 2) {
-      // Triangle wave generation
-      int targetHeight, portionSize;
-      if (cycleCounter < portion1) {
-        targetHeight = height1;
-        portionSize = portion1;
-      } else if (cycleCounter < portion1 + portion2) {
-        targetHeight = height2;
-        portionSize = portion2;
-      } else if (cycleCounter < portion1 + portion2 + portion3) {
-        targetHeight = height3;
-        portionSize = portion3;
-      } else if (cycleCounter < portion1 + portion2 + portion3 + portion4) {
-        targetHeight = height4;
-        portionSize = portion4;
-      } else {
-        targetHeight = 0;
-        portionSize = 1;
-      }
-      double slope = (targetHeight - currentHeight) / (portionSize * 1.0);
-
-      // Generate the wave
-      currentHeight += slope;
     }
-    
+   
     // Output the current height
     analogWrite(DAC0, currentHeight);
 
@@ -174,6 +189,3 @@ void shoutlResetCPU(){
     }
   }
 }
-
-
-
