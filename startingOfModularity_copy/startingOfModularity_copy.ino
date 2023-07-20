@@ -1,87 +1,179 @@
-String profile;
-long frequency; // Variable to store the frequency
-long voltageTrans; // Variable to store the voltage level
-int dutyCycle; // Variable to store the duty cycle
-int numWaves; // Variable to store the number of wave cycles in each batch
-int numBatches; // Variable to store the number of batches
-int delayBetweenBatches; // Time delay between batches in ms
-int resolution = 12; // resolution of the voltage from 0 to 4095
-bool shouldGoNext = false; // Flag to indicate if the next batch should be started
-int timeSinceLastBatch = 0; // Variable to store the time since the last batch started
-int dcAccuracy = 10;
-String input; // String to store the received input
-
 #include <DueTimer.h>
+#include <stdlib.h>     /* srand, rand */
+#include <time.h> 
 
-void parseInput(String str){
-    int commaIndex1 = str.indexOf(',');
-    profile = str.substring(0, commaIndex1);
-
-    int commaIndex2 = str.indexOf(',', commaIndex1 + 1);
-    frequency = str.substring(commaIndex1 + 1, commaIndex2).toInt();
-    frequency *= 5;
-
-    int commaIndex3 = str.indexOf(',', commaIndex2 + 1);
-    voltageTrans = str.substring(commaIndex2 + 1, commaIndex3).toInt();
-    voltageTrans  = voltageTrans * 1.861 - 1861; //mapping the voltage from 0 to 3200 to 0 to 4095
-
-    int commaIndex4 = str.indexOf(',', commaIndex3 + 1);
-    dutyCycle = str.substring(commaIndex3 + 1, commaIndex4).toInt();
-
-    int commaIndex5 = str.indexOf(',', commaIndex4 + 1);
-    numWaves = str.substring(commaIndex4 + 1, commaIndex5).toInt();
-
-    int commaIndex6 = str.indexOf(',', commaIndex5 + 1);
-    delayBetweenBatches = str.substring(commaIndex5 + 1, commaIndex6).toInt();
-
-    numBatches = str.substring(commaIndex6 + 1).toInt();
-}
+// User input variables
+int frequency, height1, portion1, height2, portion2, height3, portion3, height4, portion4;
+int numWaves, delayBetweenBatches, numBatches;
+int accuracy = 100; // Accuracy of the duty cycle in percentage
+bool shouldGoNext = false; // Flag to indicate if the next batch should be started
+String input; // String to store the received input
+int waveType = 1; // Variable to store the type of wave to generate
 
 void setup() { 
   Serial.begin(9600); // Begin serial communication at 9600 baud
-  analogWriteResolution(resolution);
+  analogWriteResolution(12); // Set resolution of the voltage from 0 to 4095
+  printMenu(); // Print the menu options
 }
 
 void loop() {
   if (Serial.available()) { // If data is available to read
-    input = Serial.readStringUntil('\n'); // read it until newline
+    input = Serial.readStringUntil('\n'); // Read it until newline
 
-    // parse the input string
-    parseInput(input);
-
-    for (int i = 0; i < numBatches; i++){
-        /* code */
-        Timer1.attachInterrupt(timerIsr).setFrequency(frequency * 2).start(); // Frequency doubled for square wave
-        while (!shouldGoNext) {
-          Serial.print(""); //DO NOT remove this line,otherwise it won't work. NO IDEA
-        } 
-        Serial.println(i);
-        delay(delayBetweenBatches);
-        shouldGoNext = false;
+    if (input == "r" || input == "R") {
+      analogWrite(DAC0, 0);
+      NVIC_SystemReset(); // Reset the CPU
     }
-    }
-  }
-
-void timerIsr() {
-    static unsigned long dutyCycleCounter = 0;
-    static unsigned long waveCounter = 0;
-
-    if (waveCounter < numWaves) {
-        if (dutyCycleCounter< (dcAccuracy-dutyCycle)) {
-            analogWrite(DAC0, 0);
-        } else {
-            analogWrite(DAC0, voltageTrans);
-        }
-        if (dutyCycleCounter == dcAccuracy-1) {
-            waveCounter++;
-        }
-        dutyCycleCounter = (dutyCycleCounter + 1) % dcAccuracy;
+    else if (input == "1" || input == "2") {
+      waveType = input.toInt(); // Set the wave type
+      Serial.println("Enter parameters: ");
     }
     else {
-        analogWrite(DAC0, 0);
-        waveCounter = 0;
-        dutyCycleCounter = 0;
-        shouldGoNext = true;
-        Timer1.stop();
+      // Parse the input string
+      parseInput(input);
+
+      // Generate the waves
+      generateWaves();
     }
+  }
 }
+
+
+void generateWaves() {
+  for (int i = 0; i < numBatches || numBatches == 0; i++) {
+    Timer1.attachInterrupt(timeISR).setFrequency(frequency * 2).start(); // Frequency doubled for square wave
+
+    // Wait for the current batch to finish
+    while (!shouldGoNext) {
+      shoutlResetCPU();
+    } 
+
+    Serial.println(i);
+    delay(delayBetweenBatches);
+    shouldGoNext = false;
+  }
+}
+
+void timeISR() {
+  static unsigned long cycleCounter = 0;
+  static unsigned long waveCounter = 0;
+  static double currentHeight = 0;
+
+  if (waveCounter < numWaves) {
+    if (waveType == 1) {
+      // Normal wave generation
+      if (cycleCounter < portion1) {
+        currentHeight = height1;
+      } else if (cycleCounter < portion1 + portion2) {
+        currentHeight = height2;
+      } else if (cycleCounter < portion1 + portion2 + portion3) {
+        currentHeight = height3;
+      } else if (cycleCounter < portion1 + portion2 + portion3 + portion4) {
+        currentHeight = height4;
+      } else {
+        currentHeight = 0;
+      }
+    } else if (waveType == 2) {
+      // Triangle wave generation
+      int targetHeight, portionSize;
+      if (cycleCounter < portion1) {
+        targetHeight = height1;
+        portionSize = portion1;
+      } else if (cycleCounter < portion1 + portion2) {
+        targetHeight = height2;
+        portionSize = portion2;
+      } else if (cycleCounter < portion1 + portion2 + portion3) {
+        targetHeight = height3;
+        portionSize = portion3;
+      } else if (cycleCounter < portion1 + portion2 + portion3 + portion4) {
+        targetHeight = height4;
+        portionSize = portion4;
+      } else {
+        targetHeight = 0;
+        portionSize = 1;
+      }
+      double slope = (targetHeight - currentHeight) / (portionSize * 1.0);
+
+      // Generate the wave
+      currentHeight += slope;
+    }
+    
+    // Output the current height
+    analogWrite(DAC0, currentHeight);
+
+    if (cycleCounter == accuracy - 1) {
+      waveCounter++;
+      currentHeight = 0;
+    }
+
+    cycleCounter = (cycleCounter + 1) % accuracy;
+  }
+  else {
+    // Reset the counters and stop the timer
+    analogWrite(DAC0, 0);
+    waveCounter = 0;
+    cycleCounter = 0;
+    shouldGoNext = true;
+    Timer1.stop();
+  }
+}
+
+void parseInput(String str) {
+  // Parse the input string and update the user input variables
+  int commaIndex = 0, lastCommaIndex = -1;
+  for (int i = 0; i < 11; i++) {
+    commaIndex = str.indexOf(',', lastCommaIndex + 1);
+
+    String substr;
+    if (commaIndex == -1) {
+      substr = str.substring(lastCommaIndex + 1);
+    } else {
+      substr = str.substring(lastCommaIndex + 1, commaIndex);
+    }
+
+    int val = substr.toInt();
+
+    switch (i) {
+      case 0: frequency = val * accuracy / 2; break;
+      case 1: height1 = mapVoltage(val); break;
+      case 2: portion1 = val; break;
+      case 3: height2 = mapVoltage(val); break;
+      case 4: portion2 = val; break;
+      case 5: height3 = mapVoltage(val); break;
+      case 6: portion3 = val; break;
+      case 7: height4 = mapVoltage(val); break;
+      case 8: portion4 = val; break;
+      case 9: numWaves = val; break;
+      case 10: delayBetweenBatches = val; break;
+      case 11: numBatches = val; break;
+    }
+
+    lastCommaIndex = commaIndex;
+  }
+}
+
+int mapVoltage(int voltage) {
+  // Map the voltage from -1690mV to 1690mV to 0 to 4095
+  return 1.2116*voltage + 2048;
+}
+
+void printMenu() {
+  // Print the menu options
+  Serial.println("Select wave type:");
+  Serial.println("1 - Normal");
+  Serial.println("2 - Triangle");
+}
+
+void shoutlResetCPU(){
+    if (Serial.available()) { // If data is available to read
+    input = Serial.readStringUntil('\n'); // Read it until newline
+
+    if (input == "r" || input == "R") {
+      analogWrite(DAC0, 0);
+      NVIC_SystemReset(); // Reset the CPU
+    }
+  }
+}
+
+
+
