@@ -65,6 +65,7 @@ void loop() {
 void timerIsr() {
     static unsigned long dutyCycleCounter = 0;
     static unsigned long waveCounter = 0;
+
     if (waveCounter < numWaves) {
         if (dutyCycleCounter< (dcAccuracy-dutyCycle)) {
             analogWrite(DAC0, 0);
