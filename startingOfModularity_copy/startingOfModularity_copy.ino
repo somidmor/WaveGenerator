@@ -38,7 +38,7 @@ void setup() {
 void loop() {
   switch(gState.current) {
     case INIT:
-      printMenu();
+      Serial.println("Enter parameters: ");
       gState.next = States::GET_USER_INPUT;
       break;
 
@@ -48,9 +48,6 @@ void loop() {
         if (input == "r" || input == "R") {
           analogWrite(DAC0, 0);
           NVIC_SystemReset();
-        } else if (input == "1" || input == "2") {
-          waveType = input.toInt();
-          Serial.println("Enter parameters: ");
         } else {
           gState.next = States::PARSE_USER_INPUT;
         }
@@ -83,7 +80,7 @@ void generateWaves() {
 
     // Wait for the current batch to finish
     while (!shouldGoNext) {
-      shoutlResetCPU();
+      shouldResetCPU();
     } 
 
     // Serial.println(i);
@@ -136,7 +133,10 @@ void timeISR() {
 void parseInput(String str) {
   // Parse the input string and update the user input variables
   int commaIndex = 0, lastCommaIndex = -1;
-  for (int i = 0; i < 11; i++) {
+  int portions[4] = {0, 0, 0, 0}; // Store the values of the portions temporarily
+  int portionCount = 0; // Counter to keep track of how many portions have been assigned values
+
+  for (int i = 0; i < 12; i++) {
     commaIndex = str.indexOf(',', lastCommaIndex + 1);
 
     String substr;
@@ -151,13 +151,13 @@ void parseInput(String str) {
     switch (i) {
       case 0: frequency = val * accuracy / 2; break;
       case 1: height1 = mapVoltage(val); break;
-      case 2: portion1 = val; break;
+      case 2: portions[0] = val; break;
       case 3: height2 = mapVoltage(val); break;
-      case 4: portion2 = val; break;
+      case 4: portions[1] = val; break;
       case 5: height3 = mapVoltage(val); break;
-      case 6: portion3 = val; break;
+      case 6: portions[2] = val; break;
       case 7: height4 = mapVoltage(val); break;
-      case 8: portion4 = val; break;
+      case 8: portions[3] = val; break;
       case 9: numWaves = val; break;
       case 10: delayBetweenBatches = val; break;
       case 11: numBatches = val; break;
@@ -165,21 +165,55 @@ void parseInput(String str) {
 
     lastCommaIndex = commaIndex;
   }
+
+  // Calculate the sum of the portions that have been set by the user
+  int total = 0;
+  for(int i = 0; i < 4; i++) {
+    if(portions[i] != -1) {
+      total += portions[i];
+      portionCount++;
+    }
+  }
+
+
+  // Calculate the sum to be divided among the random portions
+  int randomSum = 10 - total;
+
+  srand (micros());
+  // Assign random values to the portions that were set to -1
+  for(int i = 0; i < 4; i++) {
+    if(portions[i] == -1) {
+      // If there's only one portion left to assign, give it the remaining sum
+      if(4 - portionCount == 1) {
+        portions[i] = randomSum;
+      } else {
+        // Otherwise, assign a random value between 1 and the remaining sum
+        portions[i] = rand() % randomSum;
+        randomSum -= portions[i];
+      }
+      portionCount++;
+    }
+  }
+
+  // Assign the portions to the corresponding variables
+  portion1 = portions[0];
+  portion2 = portions[1];
+  portion3 = portions[2];
+  portion4 = portions[3];
+  Serial.println(portions[0]);
+  Serial.println(portions[1]);
+  Serial.println(portions[2]);
+  Serial.println(portions[3]);
 }
+
+
 
 int mapVoltage(int voltage) {
   // Map the voltage from -1690mV to 1690mV to 0 to 4095
   return 1.2116*voltage + 2048;
 }
 
-void printMenu() {
-  // Print the menu options
-  Serial.println("Select wave type:");
-  Serial.println("1 - Normal");
-  Serial.println("2 - Triangle");
-}
-
-void shoutlResetCPU(){
+void shouldResetCPU(){
     if (Serial.available()) { // If data is available to read
     input = Serial.readStringUntil('\n'); // Read it until newline
 
