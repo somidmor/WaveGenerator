@@ -22,6 +22,16 @@ stateStatus gState = {
     .previous = States::INIT
 };
 
+
+
+static unsigned long cycleCounter = 0;
+static unsigned long waveCounter = 0;
+static double currentHeight = 0;
+int heightLimit = 1690;
+
+// int maxHeight; // Maximum height of the user input
+// int minHeight; // Minimum height of the user input
+
 // User input variables
 int frequency, height1, portion1, height2, portion2, height3, portion3, height4, portion4;
 int numWaves, delayBetweenBlocks, numBlock, shouldAM;
@@ -79,7 +89,7 @@ void loop() {
 
 void generateWaves() {
   for (int i = 0; i < numBlock || numBlock == 0; i++) {
-    Timer1.attachInterrupt(timeISR).setFrequency(frequency * 2).start(); // Frequency doubled for square wave
+    Timer1.attachInterrupt(generateBlock).setFrequency(frequency).start(); // Frequency doubled for square wave
 
     // Wait for the current batch to finish
     while (!shouldGoNext) {
@@ -93,55 +103,67 @@ void generateWaves() {
   }
 }
 
-void timeISR() {
-  static unsigned long cycleCounter = 0;
-  static unsigned long waveCounter = 0;
-  static double currentHeight = 0;
-  short sign = 1;
+void updateWaveHeight(unsigned long cycleCounter) {
+  // This function updates the currentHeight based on the current cycleCounter.
+  if (cycleCounter < portion1) {
+    currentHeight = height1;
+  } else if (cycleCounter < portion1 + portion2) {
+    currentHeight = height2;
+  } else if (cycleCounter < portion1 + portion2 + portion3) {
+    currentHeight = height3;
+  } else if (cycleCounter < portion1 + portion2 + portion3 + portion4) {
+    currentHeight = height4;
+  } else {
+    currentHeight = 0;
+  }
+}
 
+void amplitudeModulation() {
+    static int sign = 1;
+    if (shouldAM > 0) {
+        height1 += shouldAM * sign;
+        height1 = (height1 >= 4095) ? 4095 : height1;
+        height1 = (height1 <= 0) ? 0 : height1;
+        sign = (height1 >= 4095 || height1 <= 0) ? -sign : sign;
+    }
+}
+
+void resetCounters() {
+  // Reset the counters and stop the timer
+  analogWrite(DAC0, 0);
+  waveCounter = 0;
+  cycleCounter = 0;
+  shouldGoNext = true;
+  Timer1.stop();
+}
+
+void generateBlock() {
+  
 
   setPortions(userPortions);
+
   if (waveCounter < numWaves) {
     if (waveType == 1) {
       // Normal wave generation
-      if (cycleCounter < portion1) {
-        currentHeight = height1;
-      } else if (cycleCounter < portion1 + portion2) {
-        currentHeight = height2;
-      } else if (cycleCounter < portion1 + portion2 + portion3) {
-        currentHeight = height3;
-      } else if (cycleCounter < portion1 + portion2 + portion3 + portion4) {
-        currentHeight = height4;
-      } else {
-        currentHeight = 0;
-      }
+      updateWaveHeight(cycleCounter);
     }
-   
+
+    cycleCounter++;
+
     // Output the current height
     analogWrite(DAC0, currentHeight);
 
+    
     if (cycleCounter == accuracy - 1) {
       waveCounter++;
-      // if (shouldAM) {
-      //   // If AM is enabled, change the wave type every wave
-      //   height1 += shouldAM;
-      //   height2 += shouldAM;
-      //   height3 += shouldAM;
-      //   height4 += shouldAM;
-
-      // }
+      amplitudeModulation();
       currentHeight = 0;
     }
 
     cycleCounter = (cycleCounter + 1) % accuracy;
-  }
-  else {
-    // Reset the counters and stop the timer
-    analogWrite(DAC0, 0);
-    waveCounter = 0;
-    cycleCounter = 0;
-    shouldGoNext = true;
-    Timer1.stop();
+
+  } else {
+    resetCounters();
   }
 }
 
@@ -150,7 +172,7 @@ void parseInput(String str) {
   int commaIndex = 0, lastCommaIndex = -1;
   int portionCount = 0; // Counter to keep track of how many portions have been assigned values
 
-  for (int i = 0; i < 12; i++) {
+  for (int i = 0; i < 13; i++) {
     commaIndex = str.indexOf(',', lastCommaIndex + 1);
 
     String substr;
@@ -180,6 +202,25 @@ void parseInput(String str) {
 
     lastCommaIndex = commaIndex;
   }
+
+  // Calculate the maximum and minimum heights of the user input
+  /**************************************/
+  // maxHeight = userHeights[0];
+  // for(int i = 1; i < 4; i++) {
+  //   if(userHeights[i] > maxHeight) {
+  //     maxHeight = userHeights[i];
+  //   }
+  // }
+
+  // minHeight = userHeights[0];
+  // for(int i = 1; i < 4; i++) {
+  //   if(userHeights[i] < minHeight) {
+  //     minHeight = userHeights[i];
+  //   }
+  // }
+  /**************************************/
+
+  // Assign the portions to the corresponding variables
   portion1 = userPortions[0];
   portion2 = userPortions[1];
   portion3 = userPortions[2];
@@ -188,10 +229,6 @@ void parseInput(String str) {
   height2 = userHeights[1];
   height3 = userHeights[2];
   height4 = userHeights[3];
-  Serial.println(portion1);
-  Serial.println(portion2);
-  Serial.println(portion3);
-  Serial.println(portion4);
 }
 
 int mapVoltage(int voltage) {
