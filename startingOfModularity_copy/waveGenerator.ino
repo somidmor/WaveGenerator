@@ -1,6 +1,7 @@
 #include <DueTimer.h>
 #include <stdlib.h>
 
+
 enum States {
     INIT,
     GET_USER_INPUT,
@@ -23,11 +24,13 @@ stateStatus gState = {
 
 // User input variables
 int frequency, height1, portion1, height2, portion2, height3, portion3, height4, portion4;
-int numWaves, delayBetweenBatches, numBatches;
+int numWaves, delayBetweenBlocks, numBlock, shouldAM;
 int accuracy = 10; // Accuracy of the duty cycle in percentage
 bool shouldGoNext = false; // Flag to indicate if the next batch should be started
 String input; // String to store the received input
 int waveType = 1; // Variable to store the type of wave to generate
+int userPortions[4] = {0, 0, 0, 0}; // Store the values of the users portions
+int userHeights[4] = {0, 0, 0, 0}; // Store the values of the users heights
 
 void setup() { 
   Serial.begin(9600); // Begin serial communication at 9600 baud
@@ -75,7 +78,7 @@ void loop() {
 
 
 void generateWaves() {
-  for (int i = 0; i < numBatches || numBatches == 0; i++) {
+  for (int i = 0; i < numBlock || numBlock == 0; i++) {
     Timer1.attachInterrupt(timeISR).setFrequency(frequency * 2).start(); // Frequency doubled for square wave
 
     // Wait for the current batch to finish
@@ -84,8 +87,9 @@ void generateWaves() {
     } 
 
     // Serial.println(i);
-    delay(delayBetweenBatches);
+    delay(delayBetweenBlocks);
     shouldGoNext = false;
+    srand(micros());
   }
 }
 
@@ -93,7 +97,10 @@ void timeISR() {
   static unsigned long cycleCounter = 0;
   static unsigned long waveCounter = 0;
   static double currentHeight = 0;
+  short sign = 1;
 
+
+  setPortions(userPortions);
   if (waveCounter < numWaves) {
     if (waveType == 1) {
       // Normal wave generation
@@ -115,6 +122,14 @@ void timeISR() {
 
     if (cycleCounter == accuracy - 1) {
       waveCounter++;
+      // if (shouldAM) {
+      //   // If AM is enabled, change the wave type every wave
+      //   height1 += shouldAM;
+      //   height2 += shouldAM;
+      //   height3 += shouldAM;
+      //   height4 += shouldAM;
+
+      // }
       currentHeight = 0;
     }
 
@@ -133,7 +148,6 @@ void timeISR() {
 void parseInput(String str) {
   // Parse the input string and update the user input variables
   int commaIndex = 0, lastCommaIndex = -1;
-  int portions[4] = {0, 0, 0, 0}; // Store the values of the portions temporarily
   int portionCount = 0; // Counter to keep track of how many portions have been assigned values
 
   for (int i = 0; i < 12; i++) {
@@ -150,63 +164,35 @@ void parseInput(String str) {
 
     switch (i) {
       case 0: frequency = val * accuracy / 2; break;
-      case 1: height1 = mapVoltage(val); break;
-      case 2: portions[0] = val; break;
-      case 3: height2 = mapVoltage(val); break;
-      case 4: portions[1] = val; break;
-      case 5: height3 = mapVoltage(val); break;
-      case 6: portions[2] = val; break;
-      case 7: height4 = mapVoltage(val); break;
-      case 8: portions[3] = val; break;
+      case 1: userHeights[0] = mapVoltage(val); break;
+      case 2: userPortions[0] = val; break;
+      case 3: userHeights[1] = mapVoltage(val); break;
+      case 4: userPortions[1] = val; break;
+      case 5: userHeights[2] = mapVoltage(val); break;
+      case 6: userPortions[2] = val; break;
+      case 7: userHeights[3] = mapVoltage(val); break;
+      case 8: userPortions[3] = val; break;
       case 9: numWaves = val; break;
-      case 10: delayBetweenBatches = val; break;
-      case 11: numBatches = val; break;
+      case 10: delayBetweenBlocks = val; break;
+      case 11: numBlock = val; break;
+      case 12: shouldAM = val; break;
     }
 
     lastCommaIndex = commaIndex;
   }
-
-  // Calculate the sum of the portions that have been set by the user
-  int total = 0;
-  for(int i = 0; i < 4; i++) {
-    if(portions[i] != -1) {
-      total += portions[i];
-      portionCount++;
-    }
-  }
-
-
-  // Calculate the sum to be divided among the random portions
-  int randomSum = 10 - total;
-
-  srand (micros());
-  // Assign random values to the portions that were set to -1
-  for(int i = 0; i < 4; i++) {
-    if(portions[i] == -1) {
-      // If there's only one portion left to assign, give it the remaining sum
-      if(4 - portionCount == 1) {
-        portions[i] = randomSum;
-      } else {
-        // Otherwise, assign a random value between 1 and the remaining sum
-        portions[i] = rand() % randomSum;
-        randomSum -= portions[i];
-      }
-      portionCount++;
-    }
-  }
-
-  // Assign the portions to the corresponding variables
-  portion1 = portions[0];
-  portion2 = portions[1];
-  portion3 = portions[2];
-  portion4 = portions[3];
-  Serial.println(portions[0]);
-  Serial.println(portions[1]);
-  Serial.println(portions[2]);
-  Serial.println(portions[3]);
+  portion1 = userPortions[0];
+  portion2 = userPortions[1];
+  portion3 = userPortions[2];
+  portion4 = userPortions[3];
+  height1 = userHeights[0];
+  height2 = userHeights[1];
+  height3 = userHeights[2];
+  height4 = userHeights[3];
+  Serial.println(portion1);
+  Serial.println(portion2);
+  Serial.println(portion3);
+  Serial.println(portion4);
 }
-
-
 
 int mapVoltage(int voltage) {
   // Map the voltage from -1690mV to 1690mV to 0 to 4095
@@ -216,10 +202,47 @@ int mapVoltage(int voltage) {
 void shouldResetCPU(){
     if (Serial.available()) { // If data is available to read
     input = Serial.readStringUntil('\n'); // Read it until newline
+      if (input == "r" || input == "R") {
+        analogWrite(DAC0, 0);
+        NVIC_SystemReset(); // Reset the CPU
+      }
+  }
+}
 
-    if (input == "r" || input == "R") {
-      analogWrite(DAC0, 0);
-      NVIC_SystemReset(); // Reset the CPU
+void setPortions(int (&portions)[4]){
+  int portionCount = 0;
+  int result[4] = {0, 0, 0, 0}; // Store the values of the portions temporarily
+    // Calculate the sum of the portions that have been set by the user
+  int total = 0;
+  for(int i = 0; i < 4; i++) {
+    if(portions[i] != -1) {
+      total += portions[i];
+      portionCount++;
     }
   }
+  // Calculate the sum to be divided among the random portions
+  int randomSum = 10 - total;
+
+  
+  // Assign random values to the portions that were set to -1
+  for(int i = 0; i < 4; i++) {
+    if(portions[i] == -1) {
+      // If there's only one portion left to assign, give it the remaining sum
+      if(4 - portionCount == 1) {
+        result[i] = randomSum;
+      } else {
+        // Otherwise, assign a random value between 1 and the remaining sum
+        result[i] = rand() % randomSum;
+        randomSum -= portions[i];
+      }
+      portionCount++;
+    } else {
+      result[i] = portions[i];
+    }
+  }
+  // Assign the portions to the corresponding variables
+  portion1 = result[0];
+  portion2 = result[1];
+  portion3 = result[2];
+  portion4 = result[3]; 
 }
