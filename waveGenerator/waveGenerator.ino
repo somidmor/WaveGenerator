@@ -213,7 +213,7 @@ void amplitudeModulation() {
         for (int i = 0; i < portion1; i++){
             cycleWaveHeights[i] = height1;
             if (AMScale != 0) { // if the user wants to generate amplitude modulation with scale
-            cycleWaveHeights[i + portion1] = lowLimit + ((height1)/AMScale);
+            cycleWaveHeights[i + portion1 + portion2] = lowLimit + ((height1)/AMScale); //remove loop from this and the other one instead updatewaveheight in generate block***
             }
         }
     }

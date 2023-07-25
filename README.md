@@ -35,6 +35,31 @@ Note: Portions and heights are for different parts of a wave cycle. You can spli
 * If you want to reset the CPU, type 'r' or 'R' and press 'Enter'.
 * You can input new parameters to generate a new waveform.
 
+# Random Mode
+
+This feature allows the user to set portions of the wave to randomly generated values. If the user specifies `-1` for any of the portion values (portion1, portion2, portion3, or portion4), the program will automatically generate a random number for that portion.
+
+This value is computed such that the sum of all portions always equals 10. For instance, if the user sets portion1 to 3, portion2 to `-1`, portion3 to 4, and portion4 to `-1`, the program will generate random numbers for portion2 and portion4 such that their sum, along with portion1 and portion3, equals 10.
+
+To ensure the sum is correct, the program first calculates the sum of the portions set by the user and then distributes the remaining sum among the portions set to `-1`.
+
+To note, the random values are always integers between 1 and the remaining sum, ensuring a fair distribution of the remaining sum. 
+
+This feature allows the user to introduce some randomness into their waveforms, providing a more versatile waveform generation experience.
+
+
+# Infinity Mode
+
+Infinity Mode allows the user to generate waves or blocks of waves indefinitely until the user manually stops the process. This mode is activated when the user sets `numWaves` or `numBlock` to `0`.
+
+- `numWaves`: Specifies the number of waves to generate in a block. When `numWaves` is set to `0`, the program will generate waves indefinitely until manually stopped.
+
+- `numBlock`: Specifies the number of blocks of waves to generate. When `numBlock` is set to `0`, the program will generate blocks of waves indefinitely until manually stopped.
+
+In both cases, the program will continue to generate waves or blocks of waves indefinitely, maintaining the characteristics (height, frequency, etc.) specified by the user. This mode is useful for applications where continuous signal generation is required.
+
+To stop the waveform generation in Infinity Mode, the user can reset the CPU by sending 'r' or 'R' to the input. This will stop the current process and reset all the parameters.
+
 ## Requirements
 * [Arduino Due](https://store.arduino.cc/usa/due.html) or any board supporting analogWriteResolution and DueTimer library.
 * [DueTimer library](https://github.com/ivanseidel/DueTimer)
