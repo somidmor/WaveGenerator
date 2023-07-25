@@ -25,7 +25,8 @@ enum States {
     INIT,
     GET_USER_INPUT,
     PARSE_USER_INPUT,
-    GENERATE_WAVES,
+    GENERATE_NOT_FM_WAVES,
+    GENERATE_FM_WAVES,
     USER_INPUT_ERROR_STATE,
 };
 
@@ -47,6 +48,7 @@ static unsigned long cycleCounter = 0;
 static unsigned long waveCounter = 0;
 static double currentHeight = 0;
 const int heightLimit = 1690;
+const int microseceondsInSecond = 1000000;
 
 // Accuracy of the duty cycle in percentage
 const int accuracy = 10;
@@ -85,6 +87,7 @@ void resetCounters() {
   cycleCounter = 0;
   shouldGoNext = true;
   Timer1.stop();
+  Timer2.stop();
 }
 
 
@@ -107,7 +110,7 @@ void parseInput(String str) {
     int val = substr.toInt();
 
     switch (i) {
-      case 0: userFrequency = val * accuracy / 2; break;
+      case 0: userFrequency = val; break;
       case 1: userHeights[0] = mapVoltage(val); break;
       case 2: userPortions[0] = val; break;
       case 3: userHeights[1] = mapVoltage(val); break;
@@ -122,7 +125,7 @@ void parseInput(String str) {
       case 12: isAM = val; break;
       case 13: AMScale = val; break;
       case 14: isFM = val; break;
-      case 15: maxFrequency = val * accuracy / 2; break;
+      case 15: maxFrequency = val; break;
     }
 
     lastCommaIndex = commaIndex;
@@ -137,7 +140,6 @@ void parseInput(String str) {
   height2 = userHeights[1];
   height3 = userHeights[2];
   height4 = userHeights[3];
-  currentFrequency = userFrequency;
 
 }
 
@@ -202,8 +204,6 @@ void amplitudeModulation() {
     static int sign = 1;
     static int highLimit = 4095;
     static int lowLimit = height2;
-
-  
     if (isAM != 0) {
         //set the height of the first portion
         height1 += isAM * sign;
@@ -218,15 +218,18 @@ void amplitudeModulation() {
 
 // Frequency modulation function
 void frequencyModulation() {
-  static int sign = 1;
-  if (isFM > 0) {
-      currentFrequency += isFM * sign;
-      currentFrequency = (currentFrequency >= maxFrequency) ? maxFrequency : currentFrequency;
-      currentFrequency = (currentFrequency <= userFrequency) ? userFrequency : currentFrequency;
-      sign = (currentFrequency >= maxFrequency || currentFrequency <= userFrequency) ? -sign : sign;
-      Timer1.stop();
-      Timer1.attachInterrupt(generateBlock).setFrequency(currentFrequency*2).start(); // Update the frequency
-  }
+    static int sign = 1;
+    static int highLimit = microseceondsInSecond/(userFrequency*accuracy);
+    static int lowLimit = microseceondsInSecond/(maxFrequency*accuracy);;
+    Serial.println("test");
+    if (isFM != 0) {
+        //set the height of the first portion
+        Serial.println("test2");
+        currentFrequency -= sign;
+        currentFrequency = (currentFrequency >= highLimit) ? highLimit : currentFrequency;
+        currentFrequency = (currentFrequency <= lowLimit) ? lowLimit : currentFrequency;
+        sign = (currentFrequency >= highLimit || currentFrequency <= lowLimit) ? -sign : sign;
+    }
 }
 
 // This function updates the currentHeight based on the current cycleCounter.
@@ -250,11 +253,12 @@ void updateWaveHeight() {
 void generateBlock() {
   if (cycleCounter >= accuracy) {
     waveCounter++;
-    frequencyModulation();
     setPortions(userPortions);
     amplitudeModulation();
     cycleCounter = 0;
   }
+
+  
   // update all the heights of the wave
   updateWaveHeight();
 
@@ -262,6 +266,11 @@ void generateBlock() {
   analogWrite(DAC0, cycleWaveHeights[cycleCounter]);
 
   cycleCounter++;
+  // condition to start the frequency modulation
+  DueTimer myTimer = Timer.getAvailable();
+  if (isFM != 0 && cycleCounter == accuracy && myTimer != DueTimer(2)) {
+    Timer2.attachInterrupt(frequencyModulation).setFrequency(isFM).start();
+  }
 
   // Reset the counters and stop the timer when the number of waves is reached
   // if numWaves is 0, the timer will run indefinitely
@@ -270,11 +279,45 @@ void generateBlock() {
   }
 }
 
+//this function is used to generate the waves with frequency modulation
+void generateWavesFM() {
+  // Initialize i outside the loop and the user frequency to the current frequency
+  int i = 0;
+  currentFrequency = microseceondsInSecond/(userFrequency*accuracy);
+
+  // Variables to keep track of the time
+  unsigned long previousTime = 0;
+  unsigned long currentTime;
+
+  // Use a while loop that runs indefinitely when numBlock is 0
+  while (numBlock == 0 || i < numBlock) {
+    // Use micros() to generate the frequency modulation
+    while (!shouldGoNext){
+      currentTime = micros();
+      if (currentTime - previousTime >= currentFrequency) {
+        generateBlock();
+        previousTime = currentTime;
+      }
+    }
+
+    delay(delayBetweenBlocks);
+    shouldGoNext = false;
+    srand(micros());
+
+    // Only increment i when numBlock is not 0
+    if (numBlock != 0) {
+      i++;
+    }
+  }
+}
+
+
 // This function generates the waves
 void generateWaves() {
   
   // Initialize i outside the loop and the user frequency to the current frequency
   int i = 0;
+  currentFrequency = userFrequency * accuracy / 2;
 
   // Use a while loop that runs indefinitely when numBlock is 0
   while (numBlock == 0 || i < numBlock) {
@@ -325,11 +368,20 @@ void loop() {
 
     case PARSE_USER_INPUT:
       parseInput(input);
-      gState.next = States::GENERATE_WAVES;
+      if(isFM == 0){
+        gState.next = States::GENERATE_NOT_FM_WAVES;
+      } else {
+        gState.next = States::GENERATE_FM_WAVES;
+      }
       break;
 
-    case GENERATE_WAVES:
+    case GENERATE_NOT_FM_WAVES:
       generateWaves();
+      gState.next = States::GET_USER_INPUT;
+      break;
+
+    case GENERATE_FM_WAVES:
+      generateWavesFM();
       gState.next = States::GET_USER_INPUT;
       break;
 
