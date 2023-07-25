@@ -195,27 +195,24 @@ void setPortions(int (&portions)[4]){
   portion2 = result[1];
   portion3 = result[2];
   portion4 = result[3];
-  updateWaveHeight();
 }
 
 // this function is used to generate the amplitude modulation
 void amplitudeModulation() {
     static int sign = 1;
     static int highLimit = 4095;
-    static int lowLimit = (AMScale == 0) ? 0 : 2048;
+    static int lowLimit = height2;
 
-    if (isAM > 0) {
+  
+    if (isAM != 0) {
+        //set the height of the first portion
         height1 += isAM * sign;
         height1 = (height1 >= highLimit) ? highLimit : height1;
         height1 = (height1 <= lowLimit) ? lowLimit : height1;
         sign = (height1 >= highLimit || height1 <= lowLimit) ? -sign : sign;
-        //set the fist portion height of the wave in the next cycle
-        for (int i = 0; i < portion1; i++){
-            cycleWaveHeights[i] = height1;
-            if (AMScale != 0) { // if the user wants to generate amplitude modulation with scale
-            cycleWaveHeights[i + portion1 + portion2] = lowLimit + ((height1)/AMScale); //remove loop from this and the other one instead updatewaveheight in generate block***
-            }
-        }
+        // if the user wants to generate amplitude modulation with scale
+        // calculate the height of the third portion
+        height3 = lowLimit-(lowLimit/AMScale) + ((height1)/AMScale);
     }
 }
 
@@ -232,6 +229,23 @@ void frequencyModulation() {
   }
 }
 
+// This function updates the currentHeight based on the current cycleCounter.
+void updateWaveHeight() {
+    if (cycleCounter < portion1) {
+      cycleWaveHeights[cycleCounter] = height1;
+
+    } else if (cycleCounter < portion1 + portion2) {
+      cycleWaveHeights[cycleCounter] = height2;
+    } else if (cycleCounter < portion1 + portion2 + portion3) {
+      cycleWaveHeights[cycleCounter] = height3;
+    } else if (cycleCounter < portion1 + portion2 + portion3 + portion4) {
+      cycleWaveHeights[cycleCounter] = height4;
+    } else {
+      cycleWaveHeights[cycleCounter] = 0;
+    }
+}
+
+
 // This function generates a block of the wave
 void generateBlock() {
   if (cycleCounter >= accuracy) {
@@ -241,7 +255,10 @@ void generateBlock() {
     amplitudeModulation();
     cycleCounter = 0;
   }
-  // Lookup the height from the precalculated array
+  // update all the heights of the wave
+  updateWaveHeight();
+
+  // lookup the height of the wave in the current cycle and write it to the DAC
   analogWrite(DAC0, cycleWaveHeights[cycleCounter]);
 
   cycleCounter++;
@@ -253,29 +270,8 @@ void generateBlock() {
   }
 }
 
-
-// This function updates the currentHeight based on the current cycleCounter.
-void updateWaveHeight() {
-  for (int i = 0; i < accuracy; i++) {
-    if (i < portion1) {
-      cycleWaveHeights[i] = height1;
-
-    } else if (i < portion1 + portion2) {
-      cycleWaveHeights[i] = height2;
-    } else if (i < portion1 + portion2 + portion3) {
-      cycleWaveHeights[i] = height3;
-    } else if (i < portion1 + portion2 + portion3 + portion4) {
-      cycleWaveHeights[i] = height4;
-    } else {
-      cycleWaveHeights[i] = 0;
-    }
-  }
-  
-}
-
+// This function generates the waves
 void generateWaves() {
-
-  updateWaveHeight();
   
   // Initialize i outside the loop and the user frequency to the current frequency
   int i = 0;
