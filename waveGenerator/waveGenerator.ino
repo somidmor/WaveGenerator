@@ -3,7 +3,7 @@
 
 
 // user input format:
-// userFrequency: 1-15000, it is the userFrequency of the wave
+// userFrequency: 1-13KHz, it is the userFrequency of the wave
 // height1: -1690-1690, it is the height of the wave for the first portion
 // portion1: 0-10, it is the portion of the wave for the first portion
 // height2: -1690-1690, it is the height of the wave for the second portion
@@ -195,6 +195,7 @@ void setPortions(int (&portions)[4]){
   portion2 = result[1];
   portion3 = result[2];
   portion4 = result[3];
+  updateWaveHeight();
 }
 
 // this function is used to generate the amplitude modulation
@@ -226,6 +227,7 @@ void frequencyModulation() {
       currentFrequency = (currentFrequency >= maxFrequency) ? maxFrequency : currentFrequency;
       currentFrequency = (currentFrequency <= userFrequency) ? userFrequency : currentFrequency;
       sign = (currentFrequency >= maxFrequency || currentFrequency <= userFrequency) ? -sign : sign;
+      Timer1.stop();
       Timer1.attachInterrupt(generateBlock).setFrequency(currentFrequency*2).start(); // Update the frequency
   }
 }
@@ -235,10 +237,10 @@ void generateBlock() {
   if (cycleCounter >= accuracy) {
     waveCounter++;
     frequencyModulation();
+    setPortions(userPortions);
     amplitudeModulation();
     cycleCounter = 0;
   }
-
   // Lookup the height from the precalculated array
   analogWrite(DAC0, cycleWaveHeights[cycleCounter]);
 
