@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <Wire.h>
 #include <U8g2lib.h>
 
@@ -74,13 +73,11 @@ String optionParams[menuItems] = {
 };
 /******************************************************/
 
-
-
-static unsigned long cycleCounter = 0;
-static unsigned long waveCounter = 0;
-static double currentHeight;
+unsigned long cycleCounter = 0;
+unsigned long waveCounter = 0;
 const int heightLimit = 1690;
 const int microseceondsInSecond = 1000000;
+const String outPutDac = "DAC0";
 
 
 
@@ -118,7 +115,7 @@ void resetCounters() {
   // Reset the counters and stop the timer
   stop();
   // Timer1.stop();
-  analogWrite(DAC0, groundHeight); // Set the voltage to groundHeight between blocks
+  analogWrite(outPutDac, groundHeight); // Set the voltage to groundHeight between blocks
   waveCounter = 0;
   cycleCounter = 0;
   shouldGoNext = true;
@@ -190,7 +187,7 @@ void shouldResetCPU(){
     if (Serial.available()) { // If data is available to read
     input = Serial.readStringUntil('\n'); // Read it until newline
       if (input == "r" || input == "R") {
-        analogWrite(DAC0, groundHeight);
+        analogWrite(outPutDac, groundHeight);
         NVIC_SystemReset(); // Reset the CPU
       }
   }
@@ -312,9 +309,6 @@ void generateBlock() {
     amplitudeModulation();
     cycleCounter = 0;
   }
-
-  
-
   // Reset the counters and stop the timer when the number of waves is reached
   // if numWaves is 0, the timer will run indefinitely
   //condition is when one block is done
@@ -326,7 +320,7 @@ void generateBlock() {
     // update all the heights of the wave
     updateWaveHeight();
     // lookup the height of the wave in the current cycle and write it to the DAC
-    analogWrite(DAC0, cycleWaveHeights[cycleCounter]);
+    analogWrite(outPutDac, cycleWaveHeights[cycleCounter]);
   }
   cycleCounter++;
 }
@@ -454,7 +448,7 @@ void handleUserInput() {
   if (Serial.available()) {
     input = Serial.readStringUntil('\n');
     if (input == "r" || input == "R") {
-      analogWrite(DAC0, 0);
+      analogWrite(outPutDac, 0);
       NVIC_SystemReset();
     } else if (input == "w"){
       Serial.print("w");
