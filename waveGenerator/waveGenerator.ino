@@ -1,4 +1,8 @@
 #include <stdlib.h>
+#include <Wire.h>
+#include <U8g2lib.h>
+
+
 // #include <DueTimer.h>
 
 
@@ -16,17 +20,23 @@
 // delayBetweenBlocks: 0-1000, it is the delay between each block of waves
 // numBlock: 0-1000, it is the number of blocks of waves to generate, if it is 0, it will generate blocks indefinitely
 /* isAM: 0-1690, it is the amplitude modulation of the wave, if it is 0, it will not generate amplitude modulation
-    if greater than 0 it will generate amplitude modulation, the value is the amplitude of the modulation */
-
-
-
+    if greater than 0 it will generate amplitude modulation, the value is the amplitude of the modulation each steps */
+/*AMSclae: it is the scale of the amplitude modulation, if it is 0, it will not generate amplitude modulation
+    if not 0 it will generate amplitude modulation, the value is the scale of the modulation 
+    it syncs the first height with the third height so always height1/height3 = AMScale even negative*/
+/* isFM: 0-1690, it is the frequency modulation of the wave, if it is 0, it will not generate frequency modulation
+    if greater than 0 it will generate frequency modulation, the value is the frequency of the modulation each steps */
+/* maxFrequency: 0-13KHz, it is the maximum frequency of the wave during frequency modulation */
+/* isBDM(Block Delay Modulation): 0-1690, it is the block delay modulation of the wave, if it is 0, it will not generate block delay modulation
+    if greater than 0 it will generate block delay modulation, the value is the delay of the modulation each steps */
+/* minBlockDelay: it is the minimum delay between each block of waves */
 
 enum States {
     INIT,
     GET_USER_INPUT,
     PARSE_USER_INPUT,
-    GENERATE_NOT_FM_WAVES,
-    GENERATE_FM_WAVES,
+    HANDLE_USER_INPUT,
+    GENERATE_WAVES,
     USER_INPUT_ERROR_STATE,
 };
 
@@ -44,19 +54,43 @@ stateStatus gState = {
 
 
 
+/*******************OLED Section***********************/
+U8G2_SSD1306_128X32_UNIVISION_F_SW_I2C u8g2(U8G2_R0, /* clock=*/ SCL, /* data=*/ SDA, /* reset=*/ U8X8_PIN_NONE);
+
+const int menuItems = 10;
+int currentMenuItem = 0;
+String menu[menuItems] = {"Option 1", "Option 2", "Option 3", "Option 4", "Option 5", "Option 6", "Option 7", "Option 8", "Option 9", "Option 10"};
+String optionParams[menuItems] = {
+  /*option1*/ "100,0,1690,5,-1690,5,0,0,0,0,0,0,0,0,0,0,0,0,0",
+  /*option2*/ "100,0,1690,5,-1690,5,0,0,0,0,0,0,0,0,0,5,1000,0,0",
+  /*option3*/ "100,0,1690,5,-800,5,0,0,0,0,1,10,0,0,0,0,0,0,0",
+  /*option4*/ "100,0,1690,4,0,2,0,4,0,0,0,0,0,1,-2,0,0,0,0",
+  /*option5*/ "100,0,1690,5,-1690,5,0,0,0,0,0,0,0,0,0,0,0,0,0",
+  /*option6*/ "100,0,1690,5,-1690,5,0,0,0,0,0,0,0,0,0,0,0,0,0",
+  /*option7*/ "100,0,1690,5,-1690,5,0,0,0,0,0,0,0,0,0,0,0,0,0",
+  /*option8*/ "2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2",
+  /*option9*/ "2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2",
+  /*option10*/ "2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2"
+};
+/******************************************************/
+
+
+
 static unsigned long cycleCounter = 0;
 static unsigned long waveCounter = 0;
 static double currentHeight;
 const int heightLimit = 1690;
 const int microseceondsInSecond = 1000000;
 
+
+
 // Accuracy of the duty cycle in percentage
 const int accuracy = 10;
 
 // User input variables
-const int numberOfParams = 17; //number of user parameter
+const int numberOfParams = 19; //number of user parameter
 int userFrequency,groundHeight, height1, portion1, height2, portion2, height3, portion3, height4, portion4;
-int numWaves, delayBetweenBlocks, numBlock, isAM, AMScale, isFM, maxFrequency;
+int numWaves, delayBetweenBlocks, numBlock, isAM, AMScale, isFM, maxFrequency, isBDM, minBlockDelay;
 
 // current frequency of the wave
 int currentFrequency;
@@ -127,6 +161,8 @@ void parseInput(String str) {
       case 14: AMScale = val; break;
       case 15: isFM = val; break;
       case 16: maxFrequency = val; break;
+      case 17: isBDM = val; break;
+      case 18: minBlockDelay = val; break;
     }
 
     lastCommaIndex = commaIndex;
@@ -217,6 +253,20 @@ void amplitudeModulation() {
     }
 }
 
+// Block delay modulation function
+void blockDelayModulation() {
+    static int sign = 1;
+    static int highLimit = delayBetweenBlocks;
+    static int lowLimit = minBlockDelay;
+    if (isBDM != 0) {
+        //set the height of the first portion
+        delayBetweenBlocks -= isBDM * sign;
+        delayBetweenBlocks = (delayBetweenBlocks >= highLimit) ? highLimit : delayBetweenBlocks;
+        delayBetweenBlocks = (delayBetweenBlocks <= lowLimit) ? lowLimit : delayBetweenBlocks;
+        sign = (delayBetweenBlocks >= highLimit || delayBetweenBlocks <= lowLimit) ? -sign : sign;
+    }
+  } 
+
 // Frequency modulation function
 void frequencyModulation() {
     static int sign = 1;
@@ -263,20 +313,19 @@ void generateBlock() {
     cycleCounter = 0;
   }
 
-
-  
-
-
-  // lookup the height of the wave in the current cycle and write it to the DAC
   
 
   // Reset the counters and stop the timer when the number of waves is reached
   // if numWaves is 0, the timer will run indefinitely
+  //condition is when one block is done
   if (waveCounter >= numWaves && numWaves != 0) {
     resetCounters();
+
+    blockDelayModulation();
   } else {
     // update all the heights of the wave
     updateWaveHeight();
+    // lookup the height of the wave in the current cycle and write it to the DAC
     analogWrite(DAC0, cycleWaveHeights[cycleCounter]);
   }
   cycleCounter++;
@@ -301,7 +350,7 @@ void generateWaves() {
     } 
 
     // Serial.println(i);
-    delay(delayBetweenBlocks);
+    delayMicroseconds(delayBetweenBlocks);
     shouldGoNext = false;
     srand(micros());
 
@@ -316,6 +365,8 @@ void generateWaves() {
 void setup() { 
   Serial.begin(9600); // Begin serial communication at 9600 baud
   analogWriteResolution(12); // Set resolution of the voltage from 0 to 4095
+  u8g2.begin();  // Initialize the display
+  u8g2.setFont(u8g2_font_ncenB08_tr); // Set the font
   gState.current = States::INIT; // Initialize the first state
 }
 
@@ -327,32 +378,16 @@ void loop() {
       break;
 
     case GET_USER_INPUT:
-      if (Serial.available()) {
-        input = Serial.readStringUntil('\n');
-        if (input == "r" || input == "R") {
-          analogWrite(DAC0, 0);
-          NVIC_SystemReset();
-        } else {
-          gState.next = States::PARSE_USER_INPUT;
-        }
-      }
+      handleUserInput();
+      
       break;
 
     case PARSE_USER_INPUT:
       parseInput(input);
-      if(isFM == 0){
-        gState.next = States::GENERATE_NOT_FM_WAVES;
-      } else {
-        gState.next = States::GENERATE_FM_WAVES;
-      }
+      gState.next = States::GENERATE_WAVES;
       break;
 
-    case GENERATE_NOT_FM_WAVES:
-      generateWaves();
-      gState.next = States::GET_USER_INPUT;
-      break;
-
-    case GENERATE_FM_WAVES:
+    case GENERATE_WAVES:
       generateWaves();
       gState.next = States::GET_USER_INPUT;
       break;
@@ -406,6 +441,64 @@ void stop() {
   NVIC_DisableIRQ(TC3_IRQn);
   // Reset TC3
   TC_GetStatus(TC1, 0);
+
   // Stop TC3
   TC_Stop(TC1, 0);
 }
+/*************************************************************/
+
+
+
+/*************************OLED Section************************/
+void handleUserInput() {
+  if (Serial.available()) {
+    input = Serial.readStringUntil('\n');
+    if (input == "r" || input == "R") {
+      analogWrite(DAC0, 0);
+      NVIC_SystemReset();
+    } else if (input == "w"){
+      Serial.print("w");
+      if (currentMenuItem > 0) {
+        currentMenuItem--;
+      }
+    } else if (input == "s"){
+      Serial.print("s");
+      if (currentMenuItem < menuItems - 1) {
+        currentMenuItem++;
+      }
+    } else if (input == "f"){
+      Serial.print("f");
+      selectMenuItem();
+    } else {
+      Serial.print("test1");
+      gState.next = States::PARSE_USER_INPUT;
+    }
+    
+  }
+  drawMenu();  // Draw the menu on the display
+}
+
+void drawMenu() {
+  u8g2.clearBuffer();
+  int start = currentMenuItem - 1;
+  if (start < 0) start = 0;
+
+  for (int i = start; i < min(start + 3, menuItems); i++) {
+    if (i == currentMenuItem) {
+      u8g2.drawStr(0, (i - start + 1) * 10, (char*) menu[i].c_str());
+    } else {
+      u8g2.drawStr(10, (i - start + 1) * 10, (char*) menu[i].c_str());
+    }
+  }
+
+  u8g2.sendBuffer();  // Update the display
+}
+
+void selectMenuItem() {
+  Serial.println(optionParams[currentMenuItem]);
+  input = optionParams[currentMenuItem];
+  gState.next = States::PARSE_USER_INPUT;
+}
+/*************************************************************/
+
+
