@@ -1,4 +1,3 @@
-#include <DueTimer.h>
 #include <stdlib.h>
 
 
@@ -54,8 +53,8 @@ const int microseceondsInSecond = 1000000;
 const int accuracy = 10;
 
 // User input variables
-const int numberOfParams = 16; //number of user parameter
-int userFrequency, height1, portion1, height2, portion2, height3, portion3, height4, portion4;
+const int numberOfParams = 17; //number of user parameter
+int userFrequency,groundHeight, height1, portion1, height2, portion2, height3, portion3, height4, portion4;
 int numWaves, delayBetweenBlocks, numBlock, isAM, AMScale, isFM, maxFrequency;
 
 // current frequency of the wave
@@ -82,12 +81,11 @@ int userHeights[4] = {0, 0, 0, 0};
 
 void resetCounters() {
   // Reset the counters and stop the timer
-  analogWrite(DAC0, 0); // Set the voltage to 0 between blocks
+  analogWrite(DAC0, groundHeight); // Set the voltage to groundHeight between blocks
   waveCounter = 0;
   cycleCounter = 0;
   shouldGoNext = true;
-  Timer1.stop();
-  Timer2.stop();
+  stop();
 }
 
 
@@ -111,21 +109,22 @@ void parseInput(String str) {
 
     switch (i) {
       case 0: userFrequency = val; break;
-      case 1: userHeights[0] = mapVoltage(val); break;
-      case 2: userPortions[0] = val; break;
-      case 3: userHeights[1] = mapVoltage(val); break;
-      case 4: userPortions[1] = val; break;
-      case 5: userHeights[2] = mapVoltage(val); break;
-      case 6: userPortions[2] = val; break;
-      case 7: userHeights[3] = mapVoltage(val); break;
-      case 8: userPortions[3] = val; break;
-      case 9: numWaves = val; break;
-      case 10: delayBetweenBlocks = val; break;
-      case 11: numBlock = val; break;
-      case 12: isAM = val; break;
-      case 13: AMScale = val; break;
-      case 14: isFM = val; break;
-      case 15: maxFrequency = val; break;
+      case 1: groundHeight = mapVoltage(val); break;
+      case 2: userHeights[0] = mapVoltage(val); break;
+      case 3: userPortions[0] = val; break;
+      case 4: userHeights[1] = mapVoltage(val); break;
+      case 5: userPortions[1] = val; break;
+      case 6: userHeights[2] = mapVoltage(val); break;
+      case 7: userPortions[2] = val; break;
+      case 8: userHeights[3] = mapVoltage(val); break;
+      case 9: userPortions[3] = val; break;
+      case 10: numWaves = val; break;
+      case 11: delayBetweenBlocks = val; break;
+      case 12: numBlock = val; break;
+      case 13: isAM = val; break;
+      case 14: AMScale = val; break;
+      case 15: isFM = val; break;
+      case 16: maxFrequency = val; break;
     }
 
     lastCommaIndex = commaIndex;
@@ -153,7 +152,7 @@ void shouldResetCPU(){
     if (Serial.available()) { // If data is available to read
     input = Serial.readStringUntil('\n'); // Read it until newline
       if (input == "r" || input == "R") {
-        analogWrite(DAC0, 0);
+        analogWrite(DAC0, groundHeight);
         NVIC_SystemReset(); // Reset the CPU
       }
   }
@@ -163,7 +162,7 @@ void shouldResetCPU(){
 void setPortions(int (&portions)[4]){
   int portionCount = 0;
   int result[4] = {0, 0, 0, 0}; // Store the values of the portions temporarily
-    // Calculate the sum of the portions that have been set by the user
+  // Calculate the sum of the portions that have been set by the user
   int total = 0;
   for(int i = 0; i < 4; i++) {
     if(portions[i] != -1) {
@@ -173,7 +172,6 @@ void setPortions(int (&portions)[4]){
   }
   // Calculate the sum to be divided among the random portions
   int randomSum = 10 - total;
-
   
   // Assign random values to the portions that were set to -1
   for(int i = 0; i < 4; i++) {
@@ -183,8 +181,8 @@ void setPortions(int (&portions)[4]){
         result[i] = randomSum;
       } else {
         // Otherwise, assign a random value between 1 and the remaining sum
-        result[i] = rand() % randomSum;
-        randomSum -= portions[i];
+        result[i] = rand() % randomSum + 1;
+        randomSum -= result[i];  // Subtract the value assigned to result[i]
       }
       portionCount++;
     } else {
@@ -198,6 +196,7 @@ void setPortions(int (&portions)[4]){
   portion3 = result[2];
   portion4 = result[3];
 }
+
 
 // this function is used to generate the amplitude modulation
 void amplitudeModulation() {
@@ -219,17 +218,19 @@ void amplitudeModulation() {
 // Frequency modulation function
 void frequencyModulation() {
     static int sign = 1;
-    static int highLimit = microseceondsInSecond/(userFrequency*accuracy);
-    static int lowLimit = microseceondsInSecond/(maxFrequency*accuracy);;
-    Serial.println("test");
-    if (isFM != 0) {
+    static int highLimit = maxFrequency;
+    static int lowLimit = userFrequency;
+    static int counter = 0;
+    if (isFM != 0 && counter == 10) {
         //set the height of the first portion
-        Serial.println("test2");
-        currentFrequency -= sign;
+        currentFrequency -= isFM * sign;
         currentFrequency = (currentFrequency >= highLimit) ? highLimit : currentFrequency;
         currentFrequency = (currentFrequency <= lowLimit) ? lowLimit : currentFrequency;
         sign = (currentFrequency >= highLimit || currentFrequency <= lowLimit) ? -sign : sign;
+        TC_SetRC(TC1, 0, VARIANT_MCK/2/currentFrequency/accuracy);
+        counter = 0;
     }
+    counter++;
 }
 
 // This function updates the currentHeight based on the current cycleCounter.
@@ -253,61 +254,25 @@ void updateWaveHeight() {
 void generateBlock() {
   if (cycleCounter >= accuracy) {
     waveCounter++;
+    frequencyModulation();
     setPortions(userPortions);
     amplitudeModulation();
     cycleCounter = 0;
   }
-
-  
   // update all the heights of the wave
-  updateWaveHeight();
 
   // lookup the height of the wave in the current cycle and write it to the DAC
   analogWrite(DAC0, cycleWaveHeights[cycleCounter]);
 
+  
   cycleCounter++;
-  // condition to start the frequency modulation
-  DueTimer myTimer = Timer.getAvailable();
-  if (isFM != 0 && cycleCounter == accuracy && myTimer != DueTimer(2)) {
-    Timer2.attachInterrupt(frequencyModulation).setFrequency(isFM).start();
-  }
+  updateWaveHeight();
+  
 
   // Reset the counters and stop the timer when the number of waves is reached
   // if numWaves is 0, the timer will run indefinitely
   if (waveCounter >= numWaves && numWaves != 0) {
     resetCounters();
-  }
-}
-
-//this function is used to generate the waves with frequency modulation
-void generateWavesFM() {
-  // Initialize i outside the loop and the user frequency to the current frequency
-  int i = 0;
-  currentFrequency = microseceondsInSecond/(userFrequency*accuracy);
-
-  // Variables to keep track of the time
-  unsigned long previousTime = 0;
-  unsigned long currentTime;
-
-  // Use a while loop that runs indefinitely when numBlock is 0
-  while (numBlock == 0 || i < numBlock) {
-    // Use micros() to generate the frequency modulation
-    while (!shouldGoNext){
-      currentTime = micros();
-      if (currentTime - previousTime >= currentFrequency) {
-        generateBlock();
-        previousTime = currentTime;
-      }
-    }
-
-    delay(delayBetweenBlocks);
-    shouldGoNext = false;
-    srand(micros());
-
-    // Only increment i when numBlock is not 0
-    if (numBlock != 0) {
-      i++;
-    }
   }
 }
 
@@ -317,11 +282,11 @@ void generateWaves() {
   
   // Initialize i outside the loop and the user frequency to the current frequency
   int i = 0;
-  currentFrequency = userFrequency * accuracy / 2;
-
+  currentFrequency = userFrequency;
+  
   // Use a while loop that runs indefinitely when numBlock is 0
   while (numBlock == 0 || i < numBlock) {
-    Timer1.attachInterrupt(generateBlock).setFrequency(currentFrequency*2).start(); // Frequency doubled for square wave
+    setupTC3(currentFrequency);
 
     // Wait for the current batch to finish
     while (!shouldGoNext) {
@@ -381,7 +346,7 @@ void loop() {
       break;
 
     case GENERATE_FM_WAVES:
-      generateWavesFM();
+      generateWaves();
       gState.next = States::GET_USER_INPUT;
       break;
 
@@ -392,4 +357,46 @@ void loop() {
 
   gState.previous = gState.current;
   gState.current = gState.next;
+}
+
+
+
+/***********************TIMER FUNTIONS************************/
+// Function to setup the timer counter
+void setupTC3(uint32_t frequency) {
+  // Disable TC3 interrupt
+  NVIC_DisableIRQ(TC3_IRQn);
+  // Reset TC3
+  TC_GetStatus(TC1, 0);
+  // Enable TC3 clock
+  pmc_enable_periph_clk(TC3_IRQn);
+  // Set up TC3
+  TC_Configure(TC1, 0, TC_CMR_WAVE | TC_CMR_WAVSEL_UP_RC | TC_CMR_TCCLKS_TIMER_CLOCK1);
+  // Set RC value for TC3 to match the desired frequency
+  TC_SetRC(TC1, 0, VARIANT_MCK/2/frequency/accuracy);
+  // Enable TC3 interrupt on RC compare
+  TC1->TC_CHANNEL[0].TC_IER=TC_IER_CPCS;
+  TC1->TC_CHANNEL[0].TC_IDR=~TC_IER_CPCS;
+  // Enable TC3 interrupt
+  NVIC_EnableIRQ(TC3_IRQn);
+  // Start TC3
+  TC_Start(TC1, 0);
+}
+
+// TC3 interrupt service routine
+void TC3_Handler() {
+  // Get TC3 status
+  TC_GetStatus(TC1, 0);
+  // Generate block
+  generateBlock();
+}
+
+// Function to stop the timer counter
+void stop() {
+  // Disable TC3 interrupt
+  NVIC_DisableIRQ(TC3_IRQn);
+  // Reset TC3
+  TC_GetStatus(TC1, 0);
+  // Stop TC3
+  TC_Stop(TC1, 0);
 }
