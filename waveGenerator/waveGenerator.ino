@@ -1,4 +1,5 @@
 #include <stdlib.h>
+// #include <DueTimer.h>
 
 
 // user input format:
@@ -45,7 +46,7 @@ stateStatus gState = {
 
 static unsigned long cycleCounter = 0;
 static unsigned long waveCounter = 0;
-static double currentHeight = 0;
+static double currentHeight;
 const int heightLimit = 1690;
 const int microseceondsInSecond = 1000000;
 
@@ -81,11 +82,12 @@ int userHeights[4] = {0, 0, 0, 0};
 
 void resetCounters() {
   // Reset the counters and stop the timer
+  stop();
+  // Timer1.stop();
   analogWrite(DAC0, groundHeight); // Set the voltage to groundHeight between blocks
   waveCounter = 0;
   cycleCounter = 0;
   shouldGoNext = true;
-  stop();
 }
 
 
@@ -227,6 +229,7 @@ void frequencyModulation() {
         currentFrequency = (currentFrequency >= highLimit) ? highLimit : currentFrequency;
         currentFrequency = (currentFrequency <= lowLimit) ? lowLimit : currentFrequency;
         sign = (currentFrequency >= highLimit || currentFrequency <= lowLimit) ? -sign : sign;
+        // Timer1.setFrequency(currentFrequency);
         TC_SetRC(TC1, 0, VARIANT_MCK/2/currentFrequency/accuracy);
         counter = 0;
     }
@@ -245,7 +248,7 @@ void updateWaveHeight() {
     } else if (cycleCounter < portion1 + portion2 + portion3 + portion4) {
       cycleWaveHeights[cycleCounter] = height4;
     } else {
-      cycleWaveHeights[cycleCounter] = 0;
+      cycleWaveHeights[cycleCounter] = groundHeight;
     }
 }
 
@@ -259,21 +262,24 @@ void generateBlock() {
     amplitudeModulation();
     cycleCounter = 0;
   }
-  // update all the heights of the wave
 
-  // lookup the height of the wave in the current cycle and write it to the DAC
-  analogWrite(DAC0, cycleWaveHeights[cycleCounter]);
 
   
-  cycleCounter++;
-  updateWaveHeight();
+
+
+  // lookup the height of the wave in the current cycle and write it to the DAC
   
 
   // Reset the counters and stop the timer when the number of waves is reached
   // if numWaves is 0, the timer will run indefinitely
   if (waveCounter >= numWaves && numWaves != 0) {
     resetCounters();
+  } else {
+    // update all the heights of the wave
+    updateWaveHeight();
+    analogWrite(DAC0, cycleWaveHeights[cycleCounter]);
   }
+  cycleCounter++;
 }
 
 
@@ -286,6 +292,7 @@ void generateWaves() {
   
   // Use a while loop that runs indefinitely when numBlock is 0
   while (numBlock == 0 || i < numBlock) {
+    // Timer1.attachInterrupt(generateBlock).setFrequency(currentFrequency).start(); // Attach the interrupt to the timer
     setupTC3(currentFrequency);
 
     // Wait for the current batch to finish
@@ -358,6 +365,8 @@ void loop() {
   gState.previous = gState.current;
   gState.current = gState.next;
 }
+
+
 
 
 
